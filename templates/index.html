@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knife Detection Using User's Camera</title>
+</head>
+<body>
+    <h1>Live Knife Detection</h1>
+    <video id="video" autoplay playsinline style="width: 640px; height: 480px; border: 2px solid black;"></video>
+    <canvas id="canvas" style="display: none;"></canvas>
+    <div id="result"></div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const resultDiv = document.getElementById('result');
+
+        // Access user's camera
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                video.srcObject = stream;
+            })
+            .catch(error => {
+                console.error("Error accessing the camera: ", error);
+            });
+
+        // Function to capture frame and send to the server
+        async function detectFrame() {
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            // Draw current frame from the video onto the canvas
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Convert canvas to image data
+            const frame = canvas.toDataURL('image/jpeg');
+
+            try {
+                // Send frame to the server
+                const response = await fetch('http://127.0.0.1:5001/detect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ frame: frame })
+                });
+                const data = await response.json();
+                resultDiv.innerHTML = `<h3>Detection Result: ${data.result}</h3>`;
+            } catch (error) {
+                console.error("Error during detection: ", error);
+            }
+
+            // Continue capturing frames
+            requestAnimationFrame(detectFrame);
+        }
+
+        // Start detection once the video is playing
+        video.addEventListener('play', () => {
+            detectFrame();
+        });
+    </script>
+</body>
+</html>
