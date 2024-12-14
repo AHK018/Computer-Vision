@@ -39,7 +39,7 @@
 
             try {
                 // Send frame to the server
-                const response = await fetch('http://127.0.0.1:4040/detect', {
+                const response = await fetch('http://13.60.93.250:5000/detect', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ frame: frame })
