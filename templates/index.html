@@ -24,15 +24,49 @@
         .hidden {
             display: none;
         }
+
+        .section {
+            margin: 20px auto;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            max-width: 700px;
+            background-color: #f9f9f9;
+        }
+
         button {
-            margin: 10px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            border-radius: 5px;
             padding: 10px 20px;
-            font-size: 16px;
             cursor: pointer;
         }
-        .section {
-            margin-top: 20px;
+
+        button:hover {
+            background-color: #0056b3;
         }
+
+
+        video {
+            width: 80%;
+            max-width: 600px;
+            border: 1px solid #ddd;
+            margin: 10px 0;
+        }
+
+        #processedVideo {
+            visibility: visible !important;
+            opacity: 1 !important;
+        }
+        
+        #processedVideo {
+            display: block;
+            visibility: visible;
+            opacity: 1;
+        }
+
+
     </style>
 </head>
 <body>
@@ -40,6 +74,7 @@
     <p>Choose a method for knife detection:</p>
     <button id="videoButton">Live Video Detection</button>
     <button id="uploadButton">Upload Image</button>
+    <button id="VideoUploadButton">Upload Video</button>
 
     <!-- Video Detection Section -->
     <div id="videoSection" class="section hidden">
@@ -53,7 +88,7 @@
     <!-- Image Upload Section -->
     <div id="uploadSection" class="section hidden">
         <h2>Upload an Image for Knife Detection</h2>
-        <form id="uploadForm" method="post" enctype="multipart/form-data" action="https://b11d-13-51-165-53.ngrok-free.app/upload">
+        <form id="uploadForm" method="post" enctype="multipart/form-data" action="http://127.0.0.1:5000/upload">
             <input type="file" name="file" accept="image/*" required>
             <button type="submit">Upload and Process</button>
         </form>
@@ -63,51 +98,111 @@
         </div>
     </div>
 
+    <div id = "VideoUploadSection" class="section hidden">
+        <h1>Knife Detection from Webcam</h1>
+        <p>Record a video from your webcam and detect knives.</p>
+
+        <!-- Live Webcam Preview -->
+        <video id="liveVideo" autoplay muted></video>
+
+        <!-- Recorded Video Preview -->
+        <video id="recordedVideo" controls style="display: none;"></video>
+
+        <div>
+            <button id="startBtn">Start Recording</button>
+            <button id="stopBtn" style="display: none;">Stop Recording</button>
+            <button id="processBtn" style="display: none;">Process Video</button>
+        </div>
+
+        <video id="processedVideo" controls style="width: 80%;"></video>
+
+    </div>
+
+    <!-- <div id="result" style="display: none;">
+        <h2>Processed Video:</h2>
+        <video id="processedVideo" controls style="width: 80%;"></video>
+    </div> -->
+
+    
+
+
     <script>
         const videoButton = document.getElementById('videoButton');
         const uploadButton = document.getElementById('uploadButton');
+        const VideoUploadButton = document.getElementById('VideoUploadButton');
         const videoSection = document.getElementById('videoSection');
         const uploadSection = document.getElementById('uploadSection');
+        const VideoUploadSection = document.getElementById('VideoUploadSection');
         const video = document.getElementById('video');
+        const liveVideo = document.getElementById('liveVideo');
         const canvas = document.getElementById('canvas');
         const loading = document.getElementById('loading');
         const context = canvas.getContext('2d');
+        const recordedVideo = document.getElementById('recordedVideo');
+        const processedVideo = document.getElementById('processedVideo');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const processBtn = document.getElementById('processBtn');
+        const resultDiv = document.getElementById('result');
+        let mediaRecorder;
+        let recordedChunks = [];
 
         loading.style.display = 'none'; // Initially hide the loading text
+
+        function startVideo(videoElement) {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    videoElement.srcObject = stream;
+                    videoElement.dataset.streamActive = true; // Mark the video as active
+                })
+                .catch(err => {
+                    console.error("Error accessing webcam: ", err);
+                    alert("Webcam access is required for this feature.");
+                });
+        }
+
+        function stopVideo(videoElement) {
+            const stream = videoElement.srcObject;
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                videoElement.srcObject = null;
+                videoElement.dataset.streamActive = false; // Mark the video as inactive
+            }
+        }
 
         // Button Event Listeners
         videoButton.addEventListener('click', () => {
             videoSection.classList.remove('hidden');
             uploadSection.classList.add('hidden');
-            startVideo();
+            VideoUploadSection.classList.add('hidden');
+            stopAllVideos(); // Stop all streams first
+            startVideo(video);
         });
 
         uploadButton.addEventListener('click', () => {
             uploadSection.classList.remove('hidden');
             videoSection.classList.add('hidden');
-            stopVideo();
+            VideoUploadSection.classList.add('hidden');
+            stopAllVideos(); // Stop all streams first
         });
 
-        // Start webcam stream
-        function startVideo() {
-            navigator.mediaDevices.getUserMedia({ video: true })
-                .then(stream => {
-                    video.srcObject = stream;
-                })
-                .catch(err => {
-                    console.error("Error accessing webcam: ", err);
-                });
+        VideoUploadButton.addEventListener('click', () => {
+            VideoUploadSection.classList.remove('hidden');
+            videoSection.classList.add('hidden');
+            uploadSection.classList.add('hidden');
+            stopAllVideos(); // Stop all streams first
+            startVideo(liveVideo);
+        });
+
+        // Function to stop all active videos
+        function stopAllVideos() {
+            [video, liveVideo].forEach(videoElement => {
+                if (videoElement.dataset.streamActive === "true") {
+                    stopVideo(videoElement);
+                }
+            });
         }
 
-        // Stop webcam stream
-        function stopVideo() {
-            const stream = video.srcObject;
-            if (stream) {
-                const tracks = stream.getTracks();
-                tracks.forEach(track => track.stop());
-                video.srcObject = null;
-            }
-        }
 
         // Function to send video frames to the server
         async function sendFrame() {
@@ -118,7 +213,7 @@
 
             try {
                 loading.style.display = 'block';
-                const response = await fetch('https://b11d-13-51-165-53.ngrok-free.app/detect', {
+                const response = await fetch('http://127.0.0.1:5000/detect', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -149,26 +244,108 @@
             }
         }, 200);
 
+        function startFrameCapture() {
+            if (intervalId) clearInterval(intervalId);
+            intervalId = setInterval(() => sendFrame(), 200);
+        }
+
+        function stopFrameCapture() {
+            clearInterval(intervalId);
+        }
+
         // Image Upload Handling
         document.getElementById('uploadForm').addEventListener('submit', async function (event) {
             event.preventDefault();
             const formData = new FormData(this);
 
-            const response = await fetch(this.action, {
-                method: 'POST',
-                body: formData,
-            });
+            try {
+                const response = await fetch(this.action, {
+                    method: 'POST',
+                    body: formData,
+                });
 
-            if (response.ok) {
-                const blob = await response.blob();
-                const imgUrl = URL.createObjectURL(blob);
-                const imgElement = document.getElementById('processedImage');
-                imgElement.src = imgUrl;
-                imgElement.style.display = 'block';
-            } else {
-                alert('Error processing image.');
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const imgUrl = URL.createObjectURL(blob);
+                    const imgElement = document.getElementById('processedImage');
+                    imgElement.src = imgUrl;
+                    imgElement.style.display = 'block';
+                } else {
+                    alert('Error processing image.');
+                }
+            } catch (error) {
+                console.error('Error uploading image:', error);
+                alert('Error connecting to the server.');
             }
         });
+
+
+        // Access webcam handeling video upload
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                video.srcObject = stream;
+                mediaRecorder = new MediaRecorder(stream);
+
+                mediaRecorder.ondataavailable = event => {
+                    if (event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: 'video/mp4' });
+                    const videoURL = URL.createObjectURL(blob);
+                    recordedVideo.src = videoURL;
+                    recordedVideo.style.display = 'block';
+                    processBtn.style.display = 'inline';
+                };
+            })
+            .catch(err => {
+                console.error("Error accessing webcam: ", err);
+                alert("Webcam access is required for this feature.");
+            });
+
+        // Start recording
+        startBtn.addEventListener('click', () => {
+            recordedChunks = [];
+            mediaRecorder.start();
+            startBtn.style.display = 'none';
+            stopBtn.style.display = 'inline';
+        });
+
+        // Stop recording
+        stopBtn.addEventListener('click', () => {
+            mediaRecorder.stop();
+            startBtn.style.display = 'inline';
+            stopBtn.style.display = 'none';
+        });
+
+        processBtn.addEventListener('click', async () => {
+            const blob = new Blob(recordedChunks, { type: 'video/mp4' });
+            const formData = new FormData();
+            formData.append('file', blob, 'recorded_video.mp4');
+            try {
+                const response = await fetch('http://127.0.0.1:5000/process_video', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (response.ok) {
+                    const processedBlob = await response.blob();
+                    const processedURL = URL.createObjectURL(processedBlob);
+                    processedVideo.src = processedURL;
+                    processedVideo.style.display = 'block';
+                    // resultDiv.style.display = 'block';
+                } else {
+                    alert('Error processing video.');
+                }
+            } catch (error) {
+                console.error('Error during video processing:', error);
+                alert('Error connecting to the server.');
+            }
+        });
+
+
     </script>
 </body>
 </html>

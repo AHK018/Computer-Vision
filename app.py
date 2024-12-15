@@ -1,5 +1,5 @@
 import time
-from flask import Flask, request, jsonify, send_file, render_template
+from flask import Flask, request, jsonify, send_file, render_template, send_from_directory
 import cv2
 import joblib
 import numpy as np
@@ -23,8 +23,6 @@ import torchvision
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 
 
-
-# Initialize Flask app
 app = Flask(__name__)
 CORS(app)
 
@@ -46,6 +44,77 @@ model.eval()
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 model.to(device)
+
+transform = T.Compose([T.ToTensor()])
+
+@app.route('/static')
+def serve_video():
+    return send_from_directory('recorded_video.mp4')
+
+
+@app.route('/process_video', methods=['POST'])
+def process_video():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    # Save video to disk temporarily
+    temp_video_path = 'recorded_video.mp4'
+    file.save(temp_video_path)
+    cap = cv2.VideoCapture(temp_video_path)
+    output_path = 'processed_video.mp4'
+
+    # Get video properties
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+
+    # Define video writer
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
+
+    # Loop through video frames
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # Convert frame to PIL image and preprocess
+        pil_image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        transform = T.Compose([T.ToTensor()])
+        image_tensor = transform(pil_image).unsqueeze(0).to(device)  # Add batch dimension and move to device
+
+        # Perform inference
+        with torch.no_grad():
+            predictions = model(image_tensor)
+
+        # Extract predictions
+        boxes = predictions[0]['boxes']
+        labels = predictions[0]['labels']
+        scores = predictions[0]['scores']
+
+        # Draw bounding boxes on the frame
+        for box, label, score in zip(boxes, labels, scores):
+            if score > 0.5:  # Confidence threshold
+                x1, y1, x2, y2 = box.cpu().numpy().astype(int)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)  # Red box
+                cv2.putText(frame, f"{label.item()} {score:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 
+                            0.5, (255, 255, 0), 2, cv2.LINE_AA)  # Label and score
+
+        out.write(frame)
+
+    # Release resources
+    cap.release()
+    out.release()
+    cv2.destroyAllWindows()
+
+    print("Video processing complete. Output saved to:", output_path)
+
+    return send_file(output_path, mimetype='video/mp4')
+
 
 @app.route('/upload', methods=['POST'])
 def upload():
