@@ -88,7 +88,7 @@
     <!-- Image Upload Section -->
     <div id="uploadSection" class="section hidden">
         <h2>Upload an Image for Knife Detection</h2>
-        <form id="uploadForm" method="post" enctype="multipart/form-data" action="http://127.0.0.1:5000/upload">
+        <form id="uploadForm" method="post" enctype="multipart/form-data" action="https://fd17-51-20-187-79.ngrok-free.app/upload">
             <input type="file" name="file" accept="image/*" required>
             <button type="submit">Upload and Process</button>
         </form>
@@ -117,14 +117,6 @@
         <video id="processedVideo" controls style="width: 80%;"></video>
 
     </div>
-
-    <!-- <div id="result" style="display: none;">
-        <h2>Processed Video:</h2>
-        <video id="processedVideo" controls style="width: 80%;"></video>
-    </div> -->
-
-    
-
 
     <script>
         const videoButton = document.getElementById('videoButton');
@@ -213,7 +205,7 @@
 
             try {
                 loading.style.display = 'block';
-                const response = await fetch('http://127.0.0.1:5000/detect', {
+                const response = await fetch('https://fd17-51-20-187-79.ngrok-free.app/detect', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -325,7 +317,7 @@
             const formData = new FormData();
             formData.append('file', blob, 'recorded_video.mp4');
             try {
-                const response = await fetch('http://127.0.0.1:5000/process_video', {
+                const response = await fetch('https://fd17-51-20-187-79.ngrok-free.app/process_video', {
                     method: 'POST',
                     body: formData,
                 });
