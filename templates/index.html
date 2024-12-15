@@ -3,60 +3,171 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Knife Detection Using User's Camera</title>
+    <title>Knife Detection</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+        }
+        video, canvas {
+            max-width: 100%;
+            margin-top: 20px;
+            border: 1px solid black;
+        }
+        #loading {
+            margin-top: 10px;
+            font-size: 18px;
+            color: red;
+        }
+        .hidden {
+            display: none;
+        }
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .section {
+            margin-top: 20px;
+        }
+    </style>
 </head>
 <body>
-    <h1>Live Knife Detection</h1>
-    <video id="video" autoplay playsinline style="width: 640px; height: 480px; border: 2px solid black;"></video>
-    <canvas id="canvas" style="display: none;"></canvas>
-    <div id="result"></div>
+    <h1>Knife Detection</h1>
+    <p>Choose a method for knife detection:</p>
+    <button id="videoButton">Live Video Detection</button>
+    <button id="uploadButton">Upload Image</button>
+
+    <!-- Video Detection Section -->
+    <div id="videoSection" class="section hidden">
+        <h2>Knife Detection from Live Video</h2>
+        <p>Allow webcam access to start live detection.</p>
+        <video id="video" autoplay muted></video>
+        <canvas id="canvas"></canvas>
+        <div id="loading">Processing...</div>
+    </div>
+
+    <!-- Image Upload Section -->
+    <div id="uploadSection" class="section hidden">
+        <h2>Upload an Image for Knife Detection</h2>
+        <form id="uploadForm" method="post" enctype="multipart/form-data" action="http://127.0.0.1:5001/upload">
+            <input type="file" name="file" accept="image/*" required>
+            <button type="submit">Upload and Process</button>
+        </form>
+        <div id="result">
+            <h2>Processed Image:</h2>
+            <img id="processedImage" src="" alt="Processed Image" style="display:none; max-width: 100%; height: auto;">
+        </div>
+    </div>
 
     <script>
+        const videoButton = document.getElementById('videoButton');
+        const uploadButton = document.getElementById('uploadButton');
+        const videoSection = document.getElementById('videoSection');
+        const uploadSection = document.getElementById('uploadSection');
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
-        const resultDiv = document.getElementById('result');
+        const loading = document.getElementById('loading');
+        const context = canvas.getContext('2d');
 
-        // Access user's camera
-        navigator.mediaDevices.getUserMedia({ video: true })
-            .then(stream => {
-                video.srcObject = stream;
-            })
-            .catch(error => {
-                console.error("Error accessing the camera: ", error);
-            });
+        loading.style.display = 'none'; // Initially hide the loading text
 
-        // Function to capture frame and send to the server
-        async function detectFrame() {
-            const context = canvas.getContext('2d');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
+        // Button Event Listeners
+        videoButton.addEventListener('click', () => {
+            videoSection.classList.remove('hidden');
+            uploadSection.classList.add('hidden');
+            startVideo();
+        });
 
-            // Draw current frame from the video onto the canvas
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        uploadButton.addEventListener('click', () => {
+            uploadSection.classList.remove('hidden');
+            videoSection.classList.add('hidden');
+            stopVideo();
+        });
 
-            // Convert canvas to image data
-            const frame = canvas.toDataURL('image/jpeg');
-
-            try {
-                // Send frame to the server
-                const response = await fetch('https://2270-13-60-93-250.ngrok-free.app/detect', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ frame: frame })
+        // Start webcam stream
+        function startVideo() {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    video.srcObject = stream;
+                })
+                .catch(err => {
+                    console.error("Error accessing webcam: ", err);
                 });
-                const data = await response.json();
-                resultDiv.innerHTML = `<h3>Detection Result: ${data.result}</h3>`;
-            } catch (error) {
-                console.error("Error during detection: ", error);
-            }
-
-            // Continue capturing frames
-            requestAnimationFrame(detectFrame);
         }
 
-        // Start detection once the video is playing
-        video.addEventListener('play', () => {
-            detectFrame();
+        // Stop webcam stream
+        function stopVideo() {
+            const stream = video.srcObject;
+            if (stream) {
+                const tracks = stream.getTracks();
+                tracks.forEach(track => track.stop());
+                video.srcObject = null;
+            }
+        }
+
+        // Function to send video frames to the server
+        async function sendFrame() {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const frameData = canvas.toDataURL('image/jpeg');
+
+            try {
+                loading.style.display = 'block';
+                const response = await fetch('http://127.0.0.1:5001/detect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ frame: frameData })
+                });
+
+                const data = await response.json();
+                loading.style.display = 'none';
+
+                if (data.image) {
+                    const resultImage = new Image();
+                    resultImage.src = data.image;
+                    resultImage.onload = () => {
+                        context.drawImage(resultImage, 0, 0, canvas.width, canvas.height);
+                    };
+                }
+            } catch (error) {
+                console.error("Error sending frame: ", error);
+                loading.style.display = 'none';
+            }
+        }
+
+        // Capture and send frames every 200ms
+        setInterval(() => {
+            if (!videoSection.classList.contains('hidden')) {
+                sendFrame();
+            }
+        }, 200);
+
+        // Image Upload Handling
+        document.getElementById('uploadForm').addEventListener('submit', async function (event) {
+            event.preventDefault();
+            const formData = new FormData(this);
+
+            const response = await fetch(this.action, {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (response.ok) {
+                const blob = await response.blob();
+                const imgUrl = URL.createObjectURL(blob);
+                const imgElement = document.getElementById('processedImage');
+                imgElement.src = imgUrl;
+                imgElement.style.display = 'block';
+            } else {
+                alert('Error processing image.');
+            }
         });
     </script>
 </body>
